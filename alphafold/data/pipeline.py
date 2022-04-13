@@ -15,6 +15,8 @@
 """Functions for building the input features for the AlphaFold model."""
 
 import os
+import pickle
+import shutil
 from typing import Any, Mapping, MutableMapping, Optional, Sequence, Union
 from absl import logging
 from alphafold.common import residue_constants
@@ -124,7 +126,9 @@ class DataPipeline:
                use_small_bfd: bool,
                mgnify_max_hits: int = 501,
                uniref_max_hits: int = 10000,
-               use_precomputed_msas: bool = False):
+               use_precomputed_msas: bool = False,
+               cache_dir: Optional[str] = None,
+               ):
     """Initializes the data pipeline."""
     self._use_small_bfd = use_small_bfd
     self.jackhmmer_uniref90_runner = jackhmmer.Jackhmmer(
@@ -146,6 +150,7 @@ class DataPipeline:
     self.mgnify_max_hits = mgnify_max_hits
     self.uniref_max_hits = uniref_max_hits
     self.use_precomputed_msas = use_precomputed_msas
+    self.cache_dir = cache_dir
 
   def process(self, input_fasta_path: str, msa_output_dir: str) -> FeatureDict:
     """Runs alignment tools on the input sequence and creates features."""
@@ -159,85 +164,141 @@ class DataPipeline:
     input_description = input_descs[0]
     num_res = len(input_sequence)
 
-    uniref90_out_path = os.path.join(msa_output_dir, 'uniref90_hits.sto')
-    jackhmmer_uniref90_result = run_msa_tool(
-        msa_runner=self.jackhmmer_uniref90_runner,
-        input_fasta_path=input_fasta_path,
-        msa_out_path=uniref90_out_path,
-        msa_format='sto',
-        use_precomputed_msas=self.use_precomputed_msas,
-        max_sto_sequences=self.uniref_max_hits)
-    mgnify_out_path = os.path.join(msa_output_dir, 'mgnify_hits.sto')
-    jackhmmer_mgnify_result = run_msa_tool(
-        msa_runner=self.jackhmmer_mgnify_runner,
-        input_fasta_path=input_fasta_path,
-        msa_out_path=mgnify_out_path,
-        msa_format='sto',
-        use_precomputed_msas=self.use_precomputed_msas,
-        max_sto_sequences=self.mgnify_max_hits)
+    seq_id = input_description.split()[0]
+    
+    if self.cache_dir is not None and os.path.isdir(f'{self.cache_dir}/{seq_id}'):
+        logging.debug(f'cache hit for chain {seq_id}')
+        try:
+            with open( f'{self.cache_dir}/{seq_id}/sequence_features.pkl' , 'rb') as cf:
+                sequence_features = pickle.load(cf)
+            with open( f'{self.cache_dir}/{seq_id}/msa_features.pkl' , 'rb') as cf:
+                msa_features = pickle.load(cf)
+            with open( f'{self.cache_dir}/{seq_id}/templates_result.pkl' , 'rb') as cf:
+                templates_result = pickle.load()        
 
-    msa_for_templates = jackhmmer_uniref90_result['sto']
-    msa_for_templates = parsers.deduplicate_stockholm_msa(msa_for_templates)
-    msa_for_templates = parsers.remove_empty_columns_from_stockholm_msa(
-        msa_for_templates)
+        except Exception:
+            logging.error(f'unable to load via pickle from {self.cache_dir}/{seq_id}/')
+            traceback.print_exc(file=sys.stdout)    
+            
+        try:                       
+            for fn in ['uniref90_hits.sto', 'mgnify_hits.sto', 'pdb_hits.sto', 'bfd_uniclust_hits.a3m','uniprot_hits.sto' ]:
+                shutil.copy2(f'{self.cache_dir}/{seq_id}/{fn}', msa_output_dir )
+        except Exception:
+            logging.error(f'problem copying hits from {self.cache_dir}/{seq_id}/ to {msa_output_dir}')
+            traceback.print_exc(file=sys.stdout) 
 
-    if self.template_searcher.input_format == 'sto':
-      pdb_templates_result = self.template_searcher.query(msa_for_templates)
-    elif self.template_searcher.input_format == 'a3m':
-      uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(msa_for_templates)
-      pdb_templates_result = self.template_searcher.query(uniref90_msa_as_a3m)
+        logging.debug(f'loaded/copied 8 files from {self.cache_dir}/{seq_id}')
+        
+    
     else:
-      raise ValueError('Unrecognized template input format: '
-                       f'{self.template_searcher.input_format}')
+        logging.debug(f'cache miss for chain {seq_id}')
+    
+        uniref90_out_path = os.path.join(msa_output_dir, 'uniref90_hits.sto')
+        jackhmmer_uniref90_result = run_msa_tool(
+            msa_runner=self.jackhmmer_uniref90_runner,
+            input_fasta_path=input_fasta_path,
+            msa_out_path=uniref90_out_path,
+            msa_format='sto',
+            use_precomputed_msas=self.use_precomputed_msas,
+            max_sto_sequences=self.uniref_max_hits)
+        mgnify_out_path = os.path.join(msa_output_dir, 'mgnify_hits.sto')
+        jackhmmer_mgnify_result = run_msa_tool(
+            msa_runner=self.jackhmmer_mgnify_runner,
+            input_fasta_path=input_fasta_path,
+            msa_out_path=mgnify_out_path,
+            msa_format='sto',
+            use_precomputed_msas=self.use_precomputed_msas,
+            max_sto_sequences=self.mgnify_max_hits)
+    
+        msa_for_templates = jackhmmer_uniref90_result['sto']
+        msa_for_templates = parsers.deduplicate_stockholm_msa(msa_for_templates)
+        msa_for_templates = parsers.remove_empty_columns_from_stockholm_msa(
+            msa_for_templates)
+    
+        if self.template_searcher.input_format == 'sto':
+          pdb_templates_result = self.template_searcher.query(msa_for_templates)
+        elif self.template_searcher.input_format == 'a3m':
+          uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(msa_for_templates)
+          pdb_templates_result = self.template_searcher.query(uniref90_msa_as_a3m)
+        else:
+          raise ValueError('Unrecognized template input format: '
+                           f'{self.template_searcher.input_format}')
+    
+        pdb_hits_out_path = os.path.join(
+            msa_output_dir, f'pdb_hits.{self.template_searcher.output_format}')
+        with open(pdb_hits_out_path, 'w') as f:
+          f.write(pdb_templates_result)
+    
+        uniref90_msa = parsers.parse_stockholm(jackhmmer_uniref90_result['sto'])
+        mgnify_msa = parsers.parse_stockholm(jackhmmer_mgnify_result['sto'])
+    
+        pdb_template_hits = self.template_searcher.get_template_hits(
+            output_string=pdb_templates_result, input_sequence=input_sequence)
+    
+        if self._use_small_bfd:
+          bfd_out_path = os.path.join(msa_output_dir, 'small_bfd_hits.sto')
+          jackhmmer_small_bfd_result = run_msa_tool(
+              msa_runner=self.jackhmmer_small_bfd_runner,
+              input_fasta_path=input_fasta_path,
+              msa_out_path=bfd_out_path,
+              msa_format='sto',
+              use_precomputed_msas=self.use_precomputed_msas)
+          bfd_msa = parsers.parse_stockholm(jackhmmer_small_bfd_result['sto'])
+        else:
+          bfd_out_path = os.path.join(msa_output_dir, 'bfd_uniclust_hits.a3m')
+          hhblits_bfd_uniclust_result = run_msa_tool(
+              msa_runner=self.hhblits_bfd_uniclust_runner,
+              input_fasta_path=input_fasta_path,
+              msa_out_path=bfd_out_path,
+              msa_format='a3m',
+              use_precomputed_msas=self.use_precomputed_msas)
+          bfd_msa = parsers.parse_a3m(hhblits_bfd_uniclust_result['a3m'])
+    
+        templates_result = self.template_featurizer.get_templates(
+            query_sequence=input_sequence,
+            hits=pdb_template_hits)
+    
+        sequence_features = make_sequence_features(
+            sequence=input_sequence,
+            description=input_description,
+            num_res=num_res)
+    
+        msa_features = make_msa_features((uniref90_msa, bfd_msa, mgnify_msa))
+    
+        logging.info('Uniref90 MSA size: %d sequences.', len(uniref90_msa))
+        logging.info('BFD MSA size: %d sequences.', len(bfd_msa))
+        logging.info('MGnify MSA size: %d sequences.', len(mgnify_msa))
+        logging.info('Final (deduplicated) MSA size: %d sequences.',
+                     msa_features['num_alignments'][0])
+        logging.info('Total number of templates (NB: this can include bad '
+                     'templates and is later filtered to top 4): %d.',
+                     templates_result.features['template_domain_names'].shape[0])
 
-    pdb_hits_out_path = os.path.join(
-        msa_output_dir, f'pdb_hits.{self.template_searcher.output_format}')
-    with open(pdb_hits_out_path, 'w') as f:
-      f.write(pdb_templates_result)
+    if self.cache_dir is not None and os.path.isdir(f'{self.cache_dir}'):
+        logging.debug(f'saving to cache for chain {seq_id}')
+        try:
+            os.mkdir(f'{self.cache_dir}/{seq_id}')
+        except FileExistsError as fee:
+            logging.warning(f'cache dir {self.cache_dir}/{seq_id} already exists. ')
 
-    uniref90_msa = parsers.parse_stockholm(jackhmmer_uniref90_result['sto'])
-    mgnify_msa = parsers.parse_stockholm(jackhmmer_mgnify_result['sto'])
-
-    pdb_template_hits = self.template_searcher.get_template_hits(
-        output_string=pdb_templates_result, input_sequence=input_sequence)
-
-    if self._use_small_bfd:
-      bfd_out_path = os.path.join(msa_output_dir, 'small_bfd_hits.sto')
-      jackhmmer_small_bfd_result = run_msa_tool(
-          msa_runner=self.jackhmmer_small_bfd_runner,
-          input_fasta_path=input_fasta_path,
-          msa_out_path=bfd_out_path,
-          msa_format='sto',
-          use_precomputed_msas=self.use_precomputed_msas)
-      bfd_msa = parsers.parse_stockholm(jackhmmer_small_bfd_result['sto'])
-    else:
-      bfd_out_path = os.path.join(msa_output_dir, 'bfd_uniclust_hits.a3m')
-      hhblits_bfd_uniclust_result = run_msa_tool(
-          msa_runner=self.hhblits_bfd_uniclust_runner,
-          input_fasta_path=input_fasta_path,
-          msa_out_path=bfd_out_path,
-          msa_format='a3m',
-          use_precomputed_msas=self.use_precomputed_msas)
-      bfd_msa = parsers.parse_a3m(hhblits_bfd_uniclust_result['a3m'])
-
-    templates_result = self.template_featurizer.get_templates(
-        query_sequence=input_sequence,
-        hits=pdb_template_hits)
-
-    sequence_features = make_sequence_features(
-        sequence=input_sequence,
-        description=input_description,
-        num_res=num_res)
-
-    msa_features = make_msa_features((uniref90_msa, bfd_msa, mgnify_msa))
-
-    logging.info('Uniref90 MSA size: %d sequences.', len(uniref90_msa))
-    logging.info('BFD MSA size: %d sequences.', len(bfd_msa))
-    logging.info('MGnify MSA size: %d sequences.', len(mgnify_msa))
-    logging.info('Final (deduplicated) MSA size: %d sequences.',
-                 msa_features['num_alignments'][0])
-    logging.info('Total number of templates (NB: this can include bad '
-                 'templates and is later filtered to top 4): %d.',
-                 templates_result.features['template_domain_names'].shape[0])
-
+        try:
+            with open( f'{self.cache_dir}/{seq_id}/sequence_features.pkl' , 'wb') as cf:
+                pickle.dump(sequence_features , cf ) 
+            with open( f'{self.cache_dir}/{seq_id}/msa_features.pkl' , 'wb') as cf:
+                pickle.dump(msa_features , cf ) 
+            with open( f'{self.cache_dir}/{seq_id}/templates_result.pkl' , 'wb') as cf:
+                pickle.dump(templates_result , cf )           
+        except Exception:
+            logging.error(f'unable to dump via pickle to {self.cache_dir}/{seq_id}/')
+            traceback.print_exc(file=sys.stdout)    
+        
+        try:                       
+            for fn in ['uniref90_hits.sto', 'mgnify_hits.sto', 'pdb_hits.sto', 'bfd_uniclust_hits.a3m','uniprot_hits.sto' ]:
+                shutil.copy2(f'{ msa_output_dir}/{fn}', f'{self.cache_dir}/{seq_id}/' )
+        except Exception:
+            logging.error(f'problem copying hits from {self.cache_dir}/{seq_id}/ to {msa_output_dir}')
+            traceback.print_exc(file=sys.stdout) 
+            
+        logging.debug(f'saved/copied 8 files to {self.cache_dir}/{seq_id}')
+    
     return {**sequence_features, **msa_features, **templates_result.features}

@@ -88,6 +88,10 @@ flags.DEFINE_string('max_template_date', None, 'Maximum template release date '
 flags.DEFINE_string('obsolete_pdbs_path', None, 'Path to file containing a '
                     'mapping from obsolete PDB IDs to the PDB IDs of their '
                     'replacements.')
+flags.DEFINE_string('cache_dir', None, 'Path to a directory where '
+                    'per-chain information will be cached in subdirs named'
+                    'for FASTA sequence id (first string before space)')
+
 flags.DEFINE_enum('db_preset', 'full_dbs',
                   ['full_dbs', 'reduced_dbs'],
                   'Choose preset MSA database configuration - '
@@ -128,6 +132,8 @@ flags.DEFINE_boolean('use_gpu_relax', None, 'Whether to relax on GPU. '
                      'Relax on GPU can be much faster than CPU, so it is '
                      'recommended to enable if possible. GPUs must be available'
                      ' if this setting is enabled.')
+flags.DEFINE_boolean('only_msas', False, 'Abort after writing out monomer info.')
+
 
 FLAGS = flags.FLAGS
 
@@ -156,7 +162,9 @@ def predict_structure(
     model_runners: Dict[str, model.RunModel],
     amber_relaxer: relax.AmberRelaxation,
     benchmark: bool,
-    random_seed: int):
+    random_seed: int,
+    only_msas: bool
+    ):
   """Predicts structure using AlphaFold for the given sequence."""
   logging.info('Predicting %s', fasta_name)
   timings = {}
@@ -184,95 +192,100 @@ def predict_structure(
   ranking_confidences = {}
 
   # Run the models.
-  num_models = len(model_runners)
-  for model_index, (model_name, model_runner) in enumerate(
-      model_runners.items()):
-    logging.info('Running model %s on %s', model_name, fasta_name)
-    t_0 = time.time()
-    model_random_seed = model_index + random_seed * num_models
-    processed_feature_dict = model_runner.process_features(
-        feature_dict, random_seed=model_random_seed)
-    timings[f'process_features_{model_name}'] = time.time() - t_0
-
-    t_0 = time.time()
-    prediction_result = model_runner.predict(processed_feature_dict,
-                                             random_seed=model_random_seed)
-    t_diff = time.time() - t_0
-    timings[f'predict_and_compile_{model_name}'] = t_diff
-    logging.info(
-        'Total JAX model %s on %s predict time (includes compilation time, see --benchmark): %.1fs',
-        model_name, fasta_name, t_diff)
-
-    if benchmark:
+  if not only_msas:
+      
+    num_models = len(model_runners)
+    for model_index, (model_name, model_runner) in enumerate(
+        model_runners.items()):
+      logging.info('Running model %s on %s', model_name, fasta_name)
       t_0 = time.time()
-      model_runner.predict(processed_feature_dict,
-                           random_seed=model_random_seed)
+      model_random_seed = model_index + random_seed * num_models
+      processed_feature_dict = model_runner.process_features(
+          feature_dict, random_seed=model_random_seed)
+      timings[f'process_features_{model_name}'] = time.time() - t_0
+    
+      t_0 = time.time()
+      prediction_result = model_runner.predict(processed_feature_dict,
+                                               random_seed=model_random_seed)
       t_diff = time.time() - t_0
-      timings[f'predict_benchmark_{model_name}'] = t_diff
+      timings[f'predict_and_compile_{model_name}'] = t_diff
       logging.info(
-          'Total JAX model %s on %s predict time (excludes compilation time): %.1fs',
+          'Total JAX model %s on %s predict time (includes compilation time, see --benchmark): %.1fs',
           model_name, fasta_name, t_diff)
-
-    plddt = prediction_result['plddt']
-    ranking_confidences[model_name] = prediction_result['ranking_confidence']
-
-    # Save the model outputs.
-    result_output_path = os.path.join(output_dir, f'result_{model_name}.pkl')
-    with open(result_output_path, 'wb') as f:
-      pickle.dump(prediction_result, f, protocol=4)
-
-    # Add the predicted LDDT in the b-factor column.
-    # Note that higher predicted LDDT value means higher model confidence.
-    plddt_b_factors = np.repeat(
-        plddt[:, None], residue_constants.atom_type_num, axis=-1)
-    unrelaxed_protein = protein.from_prediction(
-        features=processed_feature_dict,
-        result=prediction_result,
-        b_factors=plddt_b_factors,
-        remove_leading_feature_dimension=not model_runner.multimer_mode)
-
-    unrelaxed_pdbs[model_name] = protein.to_pdb(unrelaxed_protein)
-    unrelaxed_pdb_path = os.path.join(output_dir, f'unrelaxed_{model_name}.pdb')
-    with open(unrelaxed_pdb_path, 'w') as f:
-      f.write(unrelaxed_pdbs[model_name])
-
-    if amber_relaxer:
-      # Relax the prediction.
-      t_0 = time.time()
-      relaxed_pdb_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein)
-      timings[f'relax_{model_name}'] = time.time() - t_0
-
-      relaxed_pdbs[model_name] = relaxed_pdb_str
-
-      # Save the relaxed PDB.
-      relaxed_output_path = os.path.join(
-          output_dir, f'relaxed_{model_name}.pdb')
-      with open(relaxed_output_path, 'w') as f:
-        f.write(relaxed_pdb_str)
-
-  # Rank by model confidence and write out relaxed PDBs in rank order.
-  ranked_order = []
-  for idx, (model_name, _) in enumerate(
-      sorted(ranking_confidences.items(), key=lambda x: x[1], reverse=True)):
-    ranked_order.append(model_name)
-    ranked_output_path = os.path.join(output_dir, f'ranked_{idx}.pdb')
-    with open(ranked_output_path, 'w') as f:
-      if amber_relaxer:
-        f.write(relaxed_pdbs[model_name])
-      else:
+    
+      if benchmark:
+        t_0 = time.time()
+        model_runner.predict(processed_feature_dict,
+                             random_seed=model_random_seed)
+        t_diff = time.time() - t_0
+        timings[f'predict_benchmark_{model_name}'] = t_diff
+        logging.info(
+            'Total JAX model %s on %s predict time (excludes compilation time): %.1fs',
+            model_name, fasta_name, t_diff)
+    
+      plddt = prediction_result['plddt']
+      ranking_confidences[model_name] = prediction_result['ranking_confidence']
+    
+      # Save the model outputs.
+      result_output_path = os.path.join(output_dir, f'result_{model_name}.pkl')
+      with open(result_output_path, 'wb') as f:
+        pickle.dump(prediction_result, f, protocol=4)
+    
+      # Add the predicted LDDT in the b-factor column.
+      # Note that higher predicted LDDT value means higher model confidence.
+      plddt_b_factors = np.repeat(
+          plddt[:, None], residue_constants.atom_type_num, axis=-1)
+      unrelaxed_protein = protein.from_prediction(
+          features=processed_feature_dict,
+          result=prediction_result,
+          b_factors=plddt_b_factors,
+          remove_leading_feature_dimension=not model_runner.multimer_mode)
+    
+      unrelaxed_pdbs[model_name] = protein.to_pdb(unrelaxed_protein)
+      unrelaxed_pdb_path = os.path.join(output_dir, f'unrelaxed_{model_name}.pdb')
+      with open(unrelaxed_pdb_path, 'w') as f:
         f.write(unrelaxed_pdbs[model_name])
-
-  ranking_output_path = os.path.join(output_dir, 'ranking_debug.json')
-  with open(ranking_output_path, 'w') as f:
-    label = 'iptm+ptm' if 'iptm' in prediction_result else 'plddts'
-    f.write(json.dumps(
-        {label: ranking_confidences, 'order': ranked_order}, indent=4))
-
-  logging.info('Final timings for %s: %s', fasta_name, timings)
-
-  timings_output_path = os.path.join(output_dir, 'timings.json')
-  with open(timings_output_path, 'w') as f:
-    f.write(json.dumps(timings, indent=4))
+    
+      if amber_relaxer:
+        # Relax the prediction.
+        t_0 = time.time()
+        relaxed_pdb_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein)
+        timings[f'relax_{model_name}'] = time.time() - t_0
+    
+        relaxed_pdbs[model_name] = relaxed_pdb_str
+    
+        # Save the relaxed PDB.
+        relaxed_output_path = os.path.join(
+            output_dir, f'relaxed_{model_name}.pdb')
+        with open(relaxed_output_path, 'w') as f:
+          f.write(relaxed_pdb_str)
+    
+      # Rank by model confidence and write out relaxed PDBs in rank order.
+    ranked_order = []
+    for idx, (model_name, _) in enumerate(
+        sorted(ranking_confidences.items(), key=lambda x: x[1], reverse=True)):
+      ranked_order.append(model_name)
+      ranked_output_path = os.path.join(output_dir, f'ranked_{idx}.pdb')
+      with open(ranked_output_path, 'w') as f:
+        if amber_relaxer:
+          f.write(relaxed_pdbs[model_name])
+        else:
+          f.write(unrelaxed_pdbs[model_name])
+    
+    ranking_output_path = os.path.join(output_dir, 'ranking_debug.json')
+    with open(ranking_output_path, 'w') as f:
+      label = 'iptm+ptm' if 'iptm' in prediction_result else 'plddts'
+      f.write(json.dumps(
+          {label: ranking_confidences, 'order': ranked_order}, indent=4))
+    
+    logging.info('Final timings for %s: %s', fasta_name, timings)
+    
+    timings_output_path = os.path.join(output_dir, 'timings.json')
+    with open(timings_output_path, 'w') as f:
+      f.write(json.dumps(timings, indent=4))
+    
+  else:
+    logging.info('only_msas is True. Skipping running models.')
 
 
 def main(argv):
@@ -346,7 +359,8 @@ def main(argv):
       template_searcher=template_searcher,
       template_featurizer=template_featurizer,
       use_small_bfd=use_small_bfd,
-      use_precomputed_msas=FLAGS.use_precomputed_msas)
+      use_precomputed_msas=FLAGS.use_precomputed_msas,
+      cache_dir=FLAGS.cache_dir )
 
   if run_multimer_system:
     num_predictions_per_model = FLAGS.num_multimer_predictions_per_model
@@ -403,7 +417,8 @@ def main(argv):
         model_runners=model_runners,
         amber_relaxer=amber_relaxer,
         benchmark=FLAGS.benchmark,
-        random_seed=random_seed)
+        random_seed=random_seed,
+        only_msas=only_msas)
 
 
 if __name__ == '__main__':
