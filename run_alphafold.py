@@ -418,7 +418,7 @@ def main(argv):
         amber_relaxer=amber_relaxer,
         benchmark=FLAGS.benchmark,
         random_seed=random_seed,
-        only_msas=only_msas)
+        only_msas=FLAGS.only_msas)
 
 
 if __name__ == '__main__':
