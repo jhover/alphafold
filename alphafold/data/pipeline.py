@@ -311,6 +311,6 @@ class DataPipeline:
           logging.error(f'problem copying {msa_output_dir}/{fn} -> {self.cache_dir}/{seq_id}/' )
           traceback.print_exc(file=sys.stdout) 
             
-        logging.debug(f'saved/copied files to {self.cache_dir}/{seq_id}')
+      logging.debug(f'saved/copied files to {self.cache_dir}/{seq_id}')
     
     return {**sequence_features, **msa_features, **templates_result.features}
