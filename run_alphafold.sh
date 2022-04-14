@@ -88,6 +88,9 @@ if [[ "$benchmark" == "" ]] ; then
     benchmark=false
 fi
 
+if [[ "$only_msas" == "" ]] ; then
+    only_msas=false
+fi
 
 if [[ "$use_gpu" == "" ]] ; then
     use_gpu=true
@@ -197,7 +200,7 @@ if [[ $cache_dir != "" ]]; then
 fi
 
 if [[ $only_msas != "" ]]; then
-	command_args="$command_args --only_msas "
+	command_args="$command_args --only_msas=$only_msas "
 fi
 
 $
