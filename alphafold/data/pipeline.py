@@ -14,6 +14,7 @@
 
 """Functions for building the input features for the AlphaFold model."""
 
+import json
 import os
 import pickle
 import shutil
