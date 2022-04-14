@@ -18,6 +18,8 @@ import json
 import os
 import pickle
 import shutil
+import traceback
+
 from typing import Any, Mapping, MutableMapping, Optional, Sequence, Union
 from absl import logging
 from alphafold.common import residue_constants
@@ -284,31 +286,31 @@ class DataPipeline:
                      templates_result.features['template_domain_names'].shape[0])
 
     if self.cache_dir is not None and os.path.isdir(f'{self.cache_dir}'):
-        logging.debug(f'saving to cache for chain {seq_id}')
-        try:
-            os.mkdir(f'{self.cache_dir}/{seq_id}')
-        except FileExistsError as fee:
-            logging.warning(f'cache dir {self.cache_dir}/{seq_id} already exists. ')
+      logging.debug(f'saving to cache for chain {seq_id}')
+      try:
+        os.mkdir(f'{self.cache_dir}/{seq_id}')
+      except FileExistsError as fee:
+        logging.warning(f'cache dir {self.cache_dir}/{seq_id} already exists. ')
 
+      try:
+        with open( f'{self.cache_dir}/{seq_id}/sequence_features.pkl' , 'wb') as cf:
+          pickle.dump(sequence_features , cf ) 
+        with open( f'{self.cache_dir}/{seq_id}/msa_features.pkl' , 'wb') as cf:
+          pickle.dump(msa_features , cf ) 
+        with open( f'{self.cache_dir}/{seq_id}/templates_result.pkl' , 'wb') as cf:
+          pickle.dump(templates_result , cf )           
+      except Exception:
+        logging.error(f'unable to dump via pickle to {self.cache_dir}/{seq_id}/')
+        traceback.print_exc(file=sys.stdout)    
+                     
+      for fn in ['uniref90_hits.sto', 'mgnify_hits.sto', 'pdb_hits.sto', 'bfd_uniclust_hits.a3m','uniprot_hits.sto' ]:
         try:
-            with open( f'{self.cache_dir}/{seq_id}/sequence_features.pkl' , 'wb') as cf:
-                pickle.dump(sequence_features , cf ) 
-            with open( f'{self.cache_dir}/{seq_id}/msa_features.pkl' , 'wb') as cf:
-                pickle.dump(msa_features , cf ) 
-            with open( f'{self.cache_dir}/{seq_id}/templates_result.pkl' , 'wb') as cf:
-                pickle.dump(templates_result , cf )           
+          logging.debug(f'{msa_output_dir}/{fn} ->  {self.cache_dir}/{seq_id}/ ')
+          shutil.copy2(f'{msa_output_dir}/{fn}', f'{self.cache_dir}/{seq_id}/' )
         except Exception:
-            logging.error(f'unable to dump via pickle to {self.cache_dir}/{seq_id}/')
-            traceback.print_exc(file=sys.stdout)    
-        
-        try:                       
-            for fn in ['uniref90_hits.sto', 'mgnify_hits.sto', 'pdb_hits.sto', 'bfd_uniclust_hits.a3m','uniprot_hits.sto' ]:
-                logging.debug(f'{msa_output_dir}/{fn} ->  {self.cache_dir}/{seq_id}/ ')
-                shutil.copy2(f'{msa_output_dir}/{fn}', f'{self.cache_dir}/{seq_id}/' )
-        except Exception:
-            logging.error(f'problem copying hits from {self.cache_dir}/{seq_id}/ to {msa_output_dir}')
-            traceback.print_exc(file=sys.stdout) 
+          logging.error(f'problem copying {msa_output_dir}/{fn} -> {self.cache_dir}/{seq_id}/' )
+          traceback.print_exc(file=sys.stdout) 
             
-        logging.debug(f'saved/copied 8 files to {self.cache_dir}/{seq_id}')
+        logging.debug(f'saved/copied files to {self.cache_dir}/{seq_id}')
     
     return {**sequence_features, **msa_features, **templates_result.features}
