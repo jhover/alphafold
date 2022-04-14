@@ -166,7 +166,6 @@ class DataPipeline:
     num_res = len(input_sequence)
 
     output_dir_base, chain_id = os.path.split(msa_output_dir)
-    output_dir_base, msadir = os.path.split(output_dir_base)
     chain_id_file = f'{output_dir_base}/chain_id_map.json'
     logging.debug(f'chain_id_file = {chain_id_file}') 
     with open(chain_id_file, 'r')as f:
