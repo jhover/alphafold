@@ -174,6 +174,8 @@ def predict_structure(
   msa_output_dir = os.path.join(output_dir, 'msas')
   if not os.path.exists(msa_output_dir):
     os.makedirs(msa_output_dir)
+  else:
+    logging.debug(f'{msa_output_dir} already exists.')
 
   # Get features.
   t_0 = time.time()
@@ -193,7 +195,7 @@ def predict_structure(
 
   # Run the models.
   if not only_msas:
-      
+    logging.info(f'only_msas false. running models...')  
     num_models = len(model_runners)
     for model_index, (model_name, model_runner) in enumerate(
         model_runners.items()):

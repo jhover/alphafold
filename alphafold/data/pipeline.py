@@ -121,13 +121,14 @@ class DataPipeline:
                bfd_database_path: Optional[str],
                uniclust30_database_path: Optional[str],
                small_bfd_database_path: Optional[str],
+               cache_dir: Optional[str] = None,
                template_searcher: TemplateSearcher,
                template_featurizer: templates.TemplateHitFeaturizer,
                use_small_bfd: bool,
                mgnify_max_hits: int = 501,
                uniref_max_hits: int = 10000,
                use_precomputed_msas: bool = False,
-               cache_dir: Optional[str] = None,
+
                ):
     """Initializes the data pipeline."""
     self._use_small_bfd = use_small_bfd
@@ -154,6 +155,7 @@ class DataPipeline:
 
   def process(self, input_fasta_path: str, msa_output_dir: str) -> FeatureDict:
     """Runs alignment tools on the input sequence and creates features."""
+    logging.debug(f'handling fasta:{input_fasta_path} msa_output_dir={msa_output_dir}')
     with open(input_fasta_path) as f:
       input_fasta_str = f.read()
     input_seqs, input_descs = parsers.parse_fasta(input_fasta_str)
@@ -164,7 +166,12 @@ class DataPipeline:
     input_description = input_descs[0]
     num_res = len(input_sequence)
 
-    seq_id = input_description.split()[0]
+    
+    output_dir_base, msadir = os.path.split(msa_output_dir)
+    chain_id_file = f'{output_dir_base}/chain_id_map.json'
+    logging.debug(f'chain_id_file = {chain_id_file}') 
+    chain_id = input_description.split()[0]
+    
     
     if self.cache_dir is not None and os.path.isdir(f'{self.cache_dir}/{seq_id}'):
         logging.debug(f'cache hit for chain {seq_id}')
@@ -294,7 +301,8 @@ class DataPipeline:
         
         try:                       
             for fn in ['uniref90_hits.sto', 'mgnify_hits.sto', 'pdb_hits.sto', 'bfd_uniclust_hits.a3m','uniprot_hits.sto' ]:
-                shutil.copy2(f'{ msa_output_dir}/{fn}', f'{self.cache_dir}/{seq_id}/' )
+                logging.debug(f'{msa_output_dir}/{fn} ->  {self.cache_dir}/{seq_id}/ ')
+                shutil.copy2(f'{msa_output_dir}/{fn}', f'{self.cache_dir}/{seq_id}/' )
         except Exception:
             logging.error(f'problem copying hits from {self.cache_dir}/{seq_id}/ to {msa_output_dir}')
             traceback.print_exc(file=sys.stdout) 
