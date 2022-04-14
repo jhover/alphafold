@@ -203,8 +203,6 @@ if [[ $only_msas != "" ]]; then
 	command_args="$command_args --only_msas=$only_msas "
 fi
 
-$
-
 # Run AlphaFold with required parameters
 echo python $alphafold_script $binary_paths $database_paths $command_args
 $(python $alphafold_script $binary_paths $database_paths $command_args)

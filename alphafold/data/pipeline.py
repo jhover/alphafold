@@ -121,14 +121,13 @@ class DataPipeline:
                bfd_database_path: Optional[str],
                uniclust30_database_path: Optional[str],
                small_bfd_database_path: Optional[str],
-               cache_dir: Optional[str] = None,
                template_searcher: TemplateSearcher,
                template_featurizer: templates.TemplateHitFeaturizer,
                use_small_bfd: bool,
                mgnify_max_hits: int = 501,
                uniref_max_hits: int = 10000,
                use_precomputed_msas: bool = False,
-
+               cache_dir: Optional[str] = None,
                ):
     """Initializes the data pipeline."""
     self._use_small_bfd = use_small_bfd
