@@ -411,6 +411,9 @@ def main(argv):
   # Predict structure for each of the sequences.
   for i, fasta_path in enumerate(FLAGS.fasta_paths):
     fasta_name = fasta_names[i]
+    logging.debug(f'fasta_name = {fasta_name}')
+    logging.debug(f'fasta_path = {fasta_path}')
+    logging.debug(f'output_dir_base = {FLAGS.output_dir}')    
     predict_structure(
         fasta_path=fasta_path,
         fasta_name=fasta_name,
