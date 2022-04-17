@@ -171,12 +171,15 @@ class DataPipeline:
 
     output_dir_base, chain_id = os.path.split(msa_output_dir)
     chain_id_file = f'{output_dir_base}/chain_id_map.json'
-    logging.debug(f'chain_id_file = {chain_id_file}') 
-    with open(chain_id_file, 'r')as f:
-        chain_dict = json.load(f)
-    
-    seq_id = chain_dict[chain_id]['description'].split()[0]
-    logging.debug(f'got seq_id={seq_id} from chain_id={chain_id} from {chain_id_file}')
+    if os.path.isfile(chain_id_file):
+        logging.debug(f'chain_id_file = {chain_id_file}') 
+        with open(chain_id_file, 'r')as f:
+            chain_dict = json.load(f)
+        seq_id = chain_dict[chain_id]['description'].split()[0]
+        logging.debug(f'got seq_id={seq_id} from chain_id={chain_id} from {chain_id_file}')
+    else:
+        seq_id = input_description.split()[0] 
+        logging.debug(f'got seq_id={seq_id} input description')
     
     if self.cache_dir is not None and os.path.isdir(f'{self.cache_dir}/{seq_id}'):
       logging.debug(f'cache hit for chain {seq_id}')
