@@ -179,7 +179,7 @@ class DataPipeline:
         logging.debug(f'got seq_id={seq_id} from chain_id={chain_id} from {chain_id_file}')
     else:
         seq_id = input_description.split()[0] 
-        logging.debug(f'got seq_id={seq_id} input description')
+        logging.debug(f'got seq_id={seq_id} from input description')
     
     if self.cache_dir is not None and os.path.isdir(f'{self.cache_dir}/{seq_id}'):
       logging.debug(f'cache hit for chain {seq_id}')
