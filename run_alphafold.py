@@ -425,7 +425,9 @@ def main(argv):
         benchmark=FLAGS.benchmark,
         random_seed=random_seed,
         only_msas=FLAGS.only_msas)
-
+  logging.info(f'main() complete.')
+  
+  
 
 if __name__ == '__main__':
   flags.mark_flags_as_required([
