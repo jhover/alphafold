@@ -201,7 +201,7 @@ class DataPipeline:
         
       try:  
         with open( f'{self.cache_dir}/{seq_id}/templates_result.pkl' , 'rb') as cf:
-          templates_result = pickle.load()
+          templates_result = pickle.load(cf)
           logging.debug(f'loaded templates_result.pkl')        
       except Exception:
         logging.error(f'unable to load templates_result.pkl via pickle from {self.cache_dir}/{seq_id}/')
