@@ -186,19 +186,29 @@ class DataPipeline:
       try:
         with open( f'{self.cache_dir}/{seq_id}/sequence_features.pkl' , 'rb') as cf:
           sequence_features = pickle.load(cf)
+      except Exception:
+        logging.error(f'unable to load sequence_features.pkl via pickle from {self.cache_dir}/{seq_id}/')
+        traceback.print_exc(file=sys.stdout)  
+        
+      try:
         with open( f'{self.cache_dir}/{seq_id}/msa_features.pkl' , 'rb') as cf:
           msa_features = pickle.load(cf)
+      except Exception:
+        logging.error(f'unable to load msa_features.pkl via pickle from {self.cache_dir}/{seq_id}/')
+        traceback.print_exc(file=sys.stdout)
+        
+      try:  
         with open( f'{self.cache_dir}/{seq_id}/templates_result.pkl' , 'rb') as cf:
           templates_result = pickle.load()        
       except Exception:
-        logging.error(f'unable to load via pickle from {self.cache_dir}/{seq_id}/')
+        logging.error(f'unable to load templates_result.pkl via pickle from {self.cache_dir}/{seq_id}/')
         traceback.print_exc(file=sys.stdout)    
                                
       for fn in ['uniref90_hits.sto', 'mgnify_hits.sto', 'pdb_hits.sto', 'bfd_uniclust_hits.a3m','uniprot_hits.sto' ]:
         try:
           shutil.copy2(f'{self.cache_dir}/{seq_id}/{fn}', msa_output_dir )
         except Exception:
-          logging.error(f'problem copying hits from {self.cache_dir}/{seq_id}/ to {msa_output_dir}')
+          logging.error(f'problem copying {fn} from {self.cache_dir}/{seq_id}/ to {msa_output_dir}')
           traceback.print_exc(file=sys.stdout) 
         logging.debug(f'loaded/copied files from {self.cache_dir}/{seq_id}')
     
