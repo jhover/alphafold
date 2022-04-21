@@ -23,11 +23,12 @@ usage() {
         echo "-b <benchmark>        Run multiple JAX model evaluations to obtain a timing that excludes the compilation time, which should be more indicative of the time required for inferencing many proteins (default: 'false')"
         echo "-C <cache_dir>        Cache directory for MSAs/Features"
         echo "-O <only-msas>        Only run MSAs, then exit. Combines with use_precomputed_msas to divide CPU/GPU work.  (default: false)"
+        echo "-N <num_mult_pred>    Num of predictions per multimer model.  (default: 5)"
         echo ""
         exit 1
 }
 
-while getopts ":d:s:o:f:t:g:n:a:m:c:p:l:bC:O" i; do
+while getopts ":d:s:o:f:t:g:n:a:m:c:p:l:bC:ON:" i; do
         case "${i}" in
         d)
                 data_dir=$OPTARG
@@ -74,6 +75,9 @@ while getopts ":d:s:o:f:t:g:n:a:m:c:p:l:bC:O" i; do
         O)
                 only_msas=true
         ;;           
+        N)
+                num_mult_pred=$OPTARG
+        ;; 
         
         esac
 done
@@ -99,6 +103,11 @@ fi
 if [[ "$gpu_devices" == "" ]] ; then
     gpu_devices=0
 fi
+
+if [[ "$num_mult_pred" == "" ]] ; then
+    num_mult_pred=5
+fi
+
 
 if [[ "$model_preset" == "" ]] ; then
     model_preset="monomer"
@@ -180,6 +189,7 @@ database_paths="--uniref90_database_path=$uniref90_database_path --mgnify_databa
 binary_paths="--hhblits_binary_path=$hhblits_binary_path --hhsearch_binary_path=$hhsearch_binary_path --jackhmmer_binary_path=$jackhmmer_binary_path --kalign_binary_path=$kalign_binary_path"
 
 if [[ $model_preset == "multimer" ]]; then
+	command_args="$command_args --num_multimer_predictions_per_model=$num_mult_pred "
 	database_paths="$database_paths --uniprot_database_path=$uniprot_database_path --pdb_seqres_database_path=$pdb_seqres_database_path"
 else
 	database_paths="$database_paths --pdb70_database_path=$pdb70_database_path"
